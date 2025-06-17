@@ -1,6 +1,6 @@
 # ScienceAgent Interface
 
-ScienceAgent Interface provides a web interface for conducting data-driven scientific analyses with Python using language agents. The interface connects to a Python backend which allows users to execute generated Python programs and retrieve results.
+ScienceAgent Interface provides a web interface for conducting data-driven scientific tasks using [ScienceAgent](https://github.com/ICICLE-ai/ScienceAgent). The interface connects to a Python backend which allows users to execute generated programs in an isolated Docker environment and view the results.
 
 ICICLE tag: Software
 
