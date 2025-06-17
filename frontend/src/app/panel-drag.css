@@ -1,0 +1,56 @@
+:root {
+  --mouse-x: 0px;
+  --mouse-y: 0px;
+  --offset-x: 0px;
+  --offset-y: 0px;
+  --panel-width: 0px;
+  --panel-height: 0px;
+  --panel-top: 0px;
+  --panel-left: 0px;
+}
+
+.panel-drop-target {
+  position: relative;
+}
+
+.panel-drop-target::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px hsl(var(--primary));
+}
+
+.panel-dragging * {
+  cursor: grabbing !important;
+}
+
+#panel-drag-ghost {
+  pointer-events: none;
+  z-index: 9999;
+  will-change: transform;
+  transform: translate(calc(var(--mouse-x) - var(--offset-x)), calc(var(--mouse-y) - var(--offset-y)))
+}
+
+.resizable-handle {
+  transition: none !important;
+}
+
+.resizable-panel {
+  transition: none !important;
+  will-change: width, transform;
+}
+
+[data-panel-group-direction] > [data-panel] {
+  transition: none !important;
+}
+
+/* Disable transitions during resize */
+body.resizing * {
+  transition: none !important;
+  animation: none !important;
+}
