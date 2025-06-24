@@ -2,7 +2,7 @@
 
 ScienceAgent Interface provides a web interface for conducting data-driven scientific tasks using [ScienceAgent](https://github.com/ICICLE-ai/ScienceAgent). The interface connects to a Python backend which allows users to execute generated programs in an isolated Docker environment and view the results.
 
-ICICLE tag: Software
+ICICLE tag: Foundation-AI
 
 ---
 
@@ -88,7 +88,10 @@ This will create a `dist` directory containing the production build of the front
 To serve the production build, you can serve the files in the `dist` directory using any static file server.
 
 ## Example Tasks
-To load all the tasks from the [ScienceAgentBench dataset](https://github.com/OSU-NLP-Group/ScienceAgentBench) into the backend and make them available for usage, download the dataset into the `backend/benchmark` directory and run the following script:
+To load all the tasks from the [ScienceAgentBench dataset](https://github.com/OSU-NLP-Group/ScienceAgentBench) and make them available as example tasks,
+download dataset into the `backend/benchmark` directory.
+Note that you need to download the full `benchmark.zip` using the link in the repository README file.
+Once you have downloaded and extracted the data, run the following script:
 ```bash
 cd backend
 python preload_benchmark.py
