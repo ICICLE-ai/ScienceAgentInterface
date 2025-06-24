@@ -89,7 +89,7 @@ To serve the production build, you can serve the files in the `dist` directory u
 
 ## Example Tasks
 To load all the tasks from the [ScienceAgentBench dataset](https://github.com/OSU-NLP-Group/ScienceAgentBench) and make them available as example tasks,
-download dataset into the `backend/benchmark` directory.
+download the dataset into the `backend/benchmark` directory.
 Note that you need to download the full `benchmark.zip` using the link in the repository README file.
 Once you have downloaded and extracted the data, run the following script:
 ```bash
