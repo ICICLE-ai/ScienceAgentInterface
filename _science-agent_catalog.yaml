@@ -1,0 +1,12 @@
+components:
+  - id: ScienceAgent:2.0
+    owner: Huan Sun
+    name: Science Agent
+    primaryThrust: core/FoundationAI
+    description: A language agent and web interface for solving data-driven scientific discovery tasks, powered by large language models.
+    sourceCodeUrl: https://github.com/ICICLE-ai/ScienceAgentInterface
+    status: BetaRelease
+    targetIcicleRelease: 2025-07
+    publicAccess: true
+    componentVersion: 2.0
+    licenseUrl: https://opensource.org/license/MIT
