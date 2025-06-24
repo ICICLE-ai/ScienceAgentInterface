@@ -9,3 +9,4 @@ aioboto3
 aiodocker
 aiofiles
 aioshutil
+datasets
