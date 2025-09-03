@@ -82,6 +82,7 @@ type AgentMessageCallback = (data: AgentMessage|null, err: any) => void;
 export type AgentMessageInitialState = {
   type: "state";
   state: AgentSession;
+  has_default_llm: boolean;
 }
 
 export type AgentMessageResponseStart = {
@@ -151,8 +152,8 @@ export type AgentMessage =
 
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
-const WS_BASE_URL = BASE_URL.replace(/^http/, "ws") || `ws://${window.location.host}`;
-const STATIC_FILE_BASE_URL = import.meta.env.VITE_STATIC_FILE_BASE_URL || "";
+const WS_BASE_URL = BASE_URL.replace(/^https/, "wss").replace(/^http/, "ws");
+const STATIC_FILE_BASE_URL = import.meta.env.VITE_STATIC_FILE_BASE_URL || "storage";
 
 export const outputFileUrl = (file: OutputFile) => {
   return `${STATIC_FILE_BASE_URL}/${file.object_name}`;
@@ -271,7 +272,7 @@ export class AgentWebSocketConnection {
     const promise = new Promise((resolve, reject) => {
       this.pendingCommands.set(commandId, { resolve, reject });
       
-      console.log(`Command sent: ${command} (ID: ${commandId}) with timeout ${timeout}ms`);
+      // console.log(`Command sent: ${command} (ID: ${commandId}) with timeout ${timeout}ms`);
       if (timeout > 0) {
         setTimeout(() => {
           if (this.pendingCommands.has(commandId)) {

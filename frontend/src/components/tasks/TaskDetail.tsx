@@ -13,8 +13,8 @@ import {
   FileTextIcon,
   BookOpenIcon,
   GithubIcon
-} from "../icons"
-import { ThemeToggle } from "../theme-toggle"
+} from "../Icons"
+import { ThemeToggle } from "../ThemeToggleButton"
 import { createAgentSessionFromTask } from "../../api/api";
 import MarkdownRenderer from "../MarkdownRenderer"
 

@@ -4,8 +4,8 @@ import { useState, useMemo, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import TaskCard from "../components/tasks/TaskCard"
 import { getDomainColor } from "../lib/utils"
-import { ChevronDownIcon, SearchIcon, FilterIcon, PlusIcon, GridIcon, ListIcon } from "../components/icons"
-import { ThemeToggle } from "../components/theme-toggle"
+import { ChevronDownIcon, SearchIcon, FilterIcon, PlusIcon, GridIcon, ListIcon } from "../components/Icons"
+import { ThemeToggle } from "../components/ThemeToggleButton"
 import { type AgentSession, createAgentSession, fetchTask, fetchTasks } from "../api/api"
 import {
   DropdownMenu,
@@ -16,7 +16,7 @@ import {
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { Home } from "lucide-react"
+import { ChevronLeft, Home } from "lucide-react"
 
 const TaskGallery = () => {
   const navigate = useNavigate()
@@ -81,8 +81,6 @@ const TaskGallery = () => {
       return matchesSearch && matchesDomain
     })
 
-   
-
     return filtered
   }, [tabFilteredTasks, searchQuery, selectedDomains])
 
@@ -122,16 +120,14 @@ const TaskGallery = () => {
       <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full hover:bg-muted transition-colors"
-              onClick={() => navigate("/")}
-              aria-label="Back to Home"
-            >
-              <Home className="h-5 w-5" />
-            </Button>
-            <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
+            <h1 className="text-xl text-primary font-extrabold tracking-tighter">ScienceAgentBench</h1>
+          <Button
+            variant="ghost"
+            onClick={() => navigate("/")}
+            aria-label="Back to Task"
+          >
+            <ChevronLeft className="h-5 w-5" /> Return to Most Recent Task
+          </Button>
           </div>
           <ThemeToggle />
         </div>

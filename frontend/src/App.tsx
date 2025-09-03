@@ -4,7 +4,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom"
 import TaskGallery from "./app/TaskGallery"
 import TaskDetail from "./components/tasks/TaskDetail"
 import Execution from "./app/Home"
-import { ThemeProvider } from "./components/theme-provider"
+import { ThemeProvider } from "./providers/ThemeProvider"
 import { Toaster } from "@/components/ui/sonner"
 
 function App() {

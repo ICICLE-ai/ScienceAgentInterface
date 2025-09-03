@@ -1,6 +1,6 @@
 import React from "react"
 import { useState } from "react"
-import { useTheme } from "@/components/theme-provider"
+import { useTheme } from "@/providers/ThemeProvider"
 import { OutputFile, outputFileUrl } from "../api/api"
 import { formatFileSize, useLocalStorageState } from "@/lib/utils"
 import { ImageIcon, Files, FileCode, Download, ChevronDown } from "lucide-react"

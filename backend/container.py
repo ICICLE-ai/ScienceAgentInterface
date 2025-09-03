@@ -21,22 +21,22 @@ def initialize_docker():
     return docker
 
 class Container:
-    def __init__(self, agent_session_id: str):
+    def __init__(self, agent_session: AgentSession):
         self.container = None
         self.is_running = False
-        self.agent_session_id = agent_session_id
+        self.agent_session = agent_session
 
     def get_session_dir(self):
-        return os.path.join(SESSION_DIR, self.agent_session_id)
+        return os.path.join(SESSION_DIR, self.agent_session.id)
 
     def get_eval_dir(self):
-        return os.path.join(SESSION_DIR, self.agent_session_id, 'eval')
+        return os.path.join(SESSION_DIR, self.agent_session.id, 'eval')
 
     def get_output_cache_dir(self):
-        return os.path.join(SESSION_DIR, self.agent_session_id, 'pred_results')
+        return os.path.join(SESSION_DIR, self.agent_session.id, 'pred_results')
 
     def get_uploads_dir(self):
-        return os.path.join(SESSION_DIR, self.agent_session_id, 'uploads')
+        return os.path.join(SESSION_DIR, self.agent_session.id, 'uploads')
 
     @sync_to_async
     def make_dirs(self):
@@ -46,13 +46,13 @@ class Container:
         os.makedirs(self.get_uploads_dir(), exist_ok=True)
         os.makedirs(PIP_CACHE_DIR, exist_ok=True)
 
-        if sys.platform == "linux":
-            # Set sci-agent ownership so the container can access mounted directories
-            uid = 1000
-            gid = 1000
-            os.chown(self.get_eval_dir(), uid, gid)
-            os.chown(self.get_uploads_dir(), uid, gid)
-            os.chown(PIP_CACHE_DIR, uid, gid)
+        #if sys.platform == "linux":
+        #    # Set sci-agent ownership so the container can access mounted directories
+        #    uid = 1000
+        #    gid = 1000
+        #    os.chown(self.get_eval_dir(), uid, gid)
+        #    os.chown(self.get_uploads_dir(), uid, gid)
+        #    os.chown(PIP_CACHE_DIR, uid, gid)
 
     async def start(self):
         if self.is_running:
@@ -65,7 +65,7 @@ class Container:
             self.is_running = True
             return
 
-        print("Creating container for", self.agent_session_id)
+        print("Creating container for", self.agent_session.id)
 
         config = {
             "Image": "science-agent",
@@ -78,9 +78,10 @@ class Container:
                 "SecurityOpt": ["label=disable"],
             },
             "WorkingDir": "/workspace",
+            "User": f"{uid}:{gid}"
         }
         self.container = await docker.containers.create_or_replace(
-            name=f"science-agent-{self.agent_session_id}",
+            name=f"science-agent-{self.agent_session.id}",
             config=config,
         )
         await self.container.start()
@@ -116,7 +117,7 @@ class Container:
         stream = resp.start(detach=False, timeout=timeout)
 
         timestamp_start = int(time.time())
-        await broker.publish(self.agent_session_id, {"type": "execution_start", "command": command, "tag": message_tag, "start_time": timestamp_start})
+        await broker.publish(self.agent_session.id, {"type": "execution_start", "command": command, "tag": message_tag, "start_time": timestamp_start})
 
         output = ''
         try:
@@ -127,7 +128,7 @@ class Container:
                 text = chunk[1].decode('utf-8')
                 print(text, end='')
                 output += text
-                await broker.publish(self.agent_session_id, {"type": "execution_chunk", "output": text, "tag": message_tag})
+                await broker.publish(self.agent_session.id, {"type": "execution_chunk", "output": text, "tag": message_tag})
             exit_code = (await resp.inspect())['ExitCode']
             print(f"Process exited with exit code {exit_code}")
         except asyncio.CancelledError:
@@ -136,7 +137,7 @@ class Container:
             raise
         finally:
             timestamp_end = int(time.time())
-            await AgentSession.add_execution_log(self.agent_session_id, {
+            await self.agent_session.add_execution_log({
                 'start_time': timestamp_start,
                 'end_time': timestamp_end,
                 'command': command,
@@ -145,7 +146,7 @@ class Container:
                 'tag': message_tag,
             })
 
-            await broker.publish(self.agent_session_id, {"type": "execution_end", "exit_code": exit_code, "tag": message_tag, "end_time": timestamp_end})
+            await broker.publish(self.agent_session.id, {"type": "execution_end", "exit_code": exit_code, "tag": message_tag, "end_time": timestamp_end})
 
             await stream.close()
 

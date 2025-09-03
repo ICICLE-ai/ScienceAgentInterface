@@ -1,10 +1,9 @@
-from llm_engine.base_engine import LLMEngine
 from agent_session import AgentSession
 from container import Container
 from broker import broker
+from storage import Storage
+from llm_engine import LLMEngine
 
-from litellm import model_cost
-from litellm.utils import trim_messages
 from glob import glob
 from aioshutil import sync_to_async
 
@@ -27,7 +26,7 @@ print("Hello World!")
 ```"""
 
 SELF_DEBUG_PROMPT = """The user may execute your code and report any exceptions and error messages.
-Please address the reported issues and respond with a fixed, complete program."""
+Please address the reported issues and respond with a single fixed, complete program."""
 
 FORMAT_PROMPT = """Please keep your response concise and do not use a code block if it's not intended to be executed.
 Please do not suggest a few line changes, incomplete program outline, or partial code that requires the user to modify.
@@ -53,19 +52,11 @@ ARCHIVE_FILE_EXTENSIONS = ['.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2
 
 
 class ScienceAgent():
-    def __init__(self, agent_session_id: str, llm_engine_name, context_cutoff=28000):
-        self.llm_engine = LLMEngine(llm_engine_name, api_key=os.getenv('LLM_API_KEY'))
-        if model_cost.get(llm_engine_name) is None:
-            print(f"Warning: no model cost information found for {llm_engine_name}")
-
-        self.llm_cost = model_cost.get(llm_engine_name, {
-            "input_cost_per_token": 0,
-            "output_cost_per_token": 0,
-        })
+    def __init__(self, agent_session: AgentSession, context_cutoff=60_000):
         self.context_cutoff = context_cutoff
-        self.agent_session_id = agent_session_id
+        self.agent_session = agent_session
 
-    def get_sys_msg(self, uploads_folder_tree, dataset_preview, task_inst, domain_knowledge, use_self_debug, use_knowledge=True):
+    def get_sys_msg(self, llm_engine: LLMEngine, uploads_folder_tree: str, dataset_preview: str, task_inst: str, domain_knowledge: str, use_self_debug: bool, use_knowledge=True):
         sys_msg = (
             SYSTEM_PROMPT + "\n\n" +
             (SELF_DEBUG_PROMPT + "\n\n" if use_self_debug else "") +
@@ -87,9 +78,8 @@ class ScienceAgent():
                 )
             )
 
-        trimmed_sys_msg = trim_messages(
+        trimmed_sys_msg = llm_engine.trim_messages(
             [{'role': 'user', 'content': sys_msg}],
-            self.llm_engine.llm_engine_name,
             max_tokens=self.context_cutoff - 2000
         )[0]["content"]
 
@@ -107,7 +97,14 @@ class ScienceAgent():
 
 
     async def sync_uploads_dir(self, container: Container):
-        await AgentSession.download_missing_uploaded_files(self.agent_session_id, container.get_uploads_dir())
+        uploaded_files = await self.agent_session.get_uploaded_files()
+        uploads_dir = container.get_uploads_dir()
+
+        for file in uploaded_files:
+            fname = f"{uploads_dir}/{file['name']}"
+            if not await aiofiles.os.path.exists(fname):
+                await aiofiles.os.makedirs(os.path.dirname(fname), exist_ok=True)
+                await Storage.download_file(file['object_name'], fname)
 
         # extract contents of archive files
         for file in await sync_to_async(glob)(container.get_uploads_dir() + '/**/*', recursive=True):
@@ -146,18 +143,7 @@ class ScienceAgent():
         #output, exit_code = await container.run_command(["pip-sync", "eval_requirements.txt"], message_tag="install")
         output, exit_code = await container.run_command(["pip", "install", "-r", "eval_requirements.txt"], message_tag="install")
         if exit_code != 0:
-            err_msg = output
-
-            trimmed_err_msg = trim_messages(
-                [{'role': 'user', 'content': err_msg}],
-                self.llm_engine.llm_engine_name,
-                max_tokens=5000
-            )[0]["content"]
-
-            if len(trimmed_err_msg) < len(err_msg):
-                err_msg = trimmed_err_msg + "..."
-
-            return True, err_msg
+            return True, output
 
         return False, err_msg
 
@@ -195,8 +181,22 @@ class ScienceAgent():
 
         output_dir = os.path.join(container.get_eval_dir(), 'pred_results')
         outputs = await self.list_outputs(output_dir, code_data['id'])
-        all_output_files = await AgentSession.add_output_files(self.agent_session_id, outputs, output_dir)
-        await broker.publish(self.agent_session_id, {'type': 'output_files', 'files': all_output_files})
+        existing_output_files = await self.agent_session.get_output_files()
+        new_output_files = []
+        for output in outputs:
+            is_duplicate = False
+            for of in existing_output_files:
+                if of['hash'] == output['hash'] and of['filename'] == output['filename']:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                new_output_files.append(output)
+                await Storage.upload_file(os.path.join(output_dir, output['filename']), output['object_name'])
+
+        await self.agent_session.add_output_files(new_output_files)
+        all_output_files = existing_output_files + new_output_files
+        await broker.publish(self.agent_session.id, {'type': 'output_files', 'files': all_output_files})
 
         return run_output, exit_code
 
@@ -223,7 +223,7 @@ class ScienceAgent():
 
     async def execute(self, code_id: str, container: Container, timeout=1400):
         code_data = None
-        for code_file in await AgentSession.get_code_files(self.agent_session_id):
+        for code_file in await self.agent_session.get_code_files():
             if code_file['id'] == code_id:
                 code_data = code_file
                 break
@@ -246,10 +246,9 @@ class ScienceAgent():
                         break
                     hasher.update(buf)
             hash = hasher.hexdigest()[0:32]
-            mimetypes.guess_type(fname)[0]
             relname = os.path.relpath(fname, output_dir)
             size = await aiofiles.os.path.getsize(fname)
-            object_name = f"{self.agent_session_id}/outputs/{hash}{os.path.splitext(fname)[1]}"
+            object_name = f"{self.agent_session.id}/outputs/{hash}{os.path.splitext(fname)[1]}"
             results.append({
                 'id': str(uuid.uuid4()),
                 'code_data_id': code_data_id,
@@ -263,7 +262,7 @@ class ScienceAgent():
         return results
 
 
-    async def step(self, code_data, container: Container, history: list, timeout=900):
+    async def step(self, code_data, container: Container, llm_engine: LLMEngine, history: list, timeout=900):
         special_err = False
         run_output, exit_code = await self.run_program_maybe_install(code_data, container, timeout=timeout)
         if run_output == "Timeout":
@@ -282,17 +281,16 @@ class ScienceAgent():
             if not special_err:
                 err_msg = run_output
 
-                trimmed_err_msg = trim_messages(
+                trimmed_err_msg = llm_engine.trim_messages(
                     [{'role': 'user', 'content': err_msg}],
-                    self.llm_engine.llm_engine_name,
-                    max_tokens=2000
+                    max_tokens=5000
                 )[0]["content"]
 
                 if len(trimmed_err_msg) < len(err_msg):
                     err_msg = trimmed_err_msg + "..."
 
             self_debug_history = [history[0], history[-1]]
-            _, new_code_data, new_history = await self.generate(err_msg, self_debug_history)
+            _, new_code_data, new_history = await self.generate(llm_engine, err_msg, self_debug_history)
             if new_code_data and new_code_data['content'].strip() == code_data['content'].strip():
                 # send early stopping signal if program is unchanged after debugging
                 return True, new_code_data, None
@@ -300,7 +298,7 @@ class ScienceAgent():
             return False, new_code_data, new_history
 
 
-    async def generate(self, user_message, history, prompt_tag=None):
+    async def generate(self, llm_engine: LLMEngine, user_message: str, history: list, prompt_tag:str=None):
         user_input = [
             *history,
             {'role': 'user', 'content': user_message},
@@ -309,26 +307,25 @@ class ScienceAgent():
         prompt_history_id = str(uuid.uuid4())
         response_history_id = str(uuid.uuid4())
 
-        await broker.publish(self.agent_session_id, {'type': 'response_start', 'role': 'user', 'tag': prompt_tag, 'id': prompt_history_id})
-        await broker.publish(self.agent_session_id, {'type': 'response_chunk', 'text': user_message, 'id': prompt_history_id})
-        await broker.publish(self.agent_session_id, {'type': 'response_end', 'id': prompt_history_id})
-        await broker.publish(self.agent_session_id, {'type': 'response_start', 'role': 'assistant', 'id': response_history_id})
+        await broker.publish(self.agent_session.id, {'type': 'response_start', 'role': 'user', 'tag': prompt_tag, 'id': prompt_history_id})
+        await broker.publish(self.agent_session.id, {'type': 'response_chunk', 'text': user_message, 'id': prompt_history_id})
+        await broker.publish(self.agent_session.id, {'type': 'response_end', 'id': prompt_history_id})
+        await broker.publish(self.agent_session.id, {'type': 'response_start', 'role': 'assistant', 'id': response_history_id})
 
         assistant_output = ''
         total_prompt_tokens = 0
         total_completion_tokens = 0
-        async for chunk, prompt_tokens, completion_tokens in self.llm_engine.respond_stream(user_input, temperature=0.2, top_p=0.95):
+        async for chunk, prompt_tokens, completion_tokens in llm_engine.respond_stream(user_input, temperature=0.2, top_p=0.95):
             total_prompt_tokens += prompt_tokens
             total_completion_tokens += completion_tokens
             if chunk:
                 assistant_output += chunk
-                await broker.publish(self.agent_session_id, {'type': 'response_chunk', 'text': chunk, 'id': response_history_id})
+                await broker.publish(self.agent_session.id, {'type': 'response_chunk', 'text': chunk, 'id': response_history_id})
 
-        cost = total_prompt_tokens * self.llm_cost["input_cost_per_token"] + \
-               total_completion_tokens * self.llm_cost["output_cost_per_token"]
+        cost = llm_engine.get_cost(total_prompt_tokens, total_completion_tokens)
 
-        await broker.publish(self.agent_session_id, {'type': 'response_end', 'id': response_history_id})
-        await broker.publish(self.agent_session_id, {
+        await broker.publish(self.agent_session.id, {'type': 'response_end', 'id': response_history_id})
+        await broker.publish(self.agent_session.id, {
             'type': 'usage',
             'cost': cost,
             'prompt_tokens': total_prompt_tokens,
@@ -337,18 +334,18 @@ class ScienceAgent():
 
         new_history = [
             {'role': 'user', 'content': user_message, 'tag': prompt_tag, 'id': prompt_history_id},
-            {'role': 'assistant', 'content': assistant_output, 'llm_engine_name': self.llm_engine.llm_engine_name, 'id': response_history_id},
+            {'role': 'assistant', 'content': assistant_output, 'llm_engine_name': llm_engine.llm_engine_name, 'id': response_history_id},
         ]
 
         tasks = [
-            AgentSession.add_history(self.agent_session_id, new_history),
-            AgentSession.add_usage(self.agent_session_id, total_completion_tokens, total_prompt_tokens, cost),
+            self.agent_session.add_history(new_history),
+            self.agent_session.add_usage(total_completion_tokens, total_prompt_tokens, cost),
         ]
 
         code_output = self.extract_program(assistant_output)
         code_data = None
         if len(code_output) > 0:
-            code_files = await AgentSession.get_code_files(self.agent_session_id)
+            code_files = await self.agent_session.get_code_files()
             for i, code_str in enumerate(code_output):
                 filename = f'program-{len(code_files)+i}.py'
                 code_data = {
@@ -360,40 +357,50 @@ class ScienceAgent():
                     'block_index': i,
                     'is_gold': False,
                 }
-                tasks.append(AgentSession.add_code_file(self.agent_session_id, code_data))
-                await broker.publish(self.agent_session_id, {'type': 'code_file', 'code_file': code_data})
+                tasks.append(self.agent_session.add_code_file(code_data))
+                await broker.publish(self.agent_session.id, {'type': 'code_file', 'code_file': code_data})
 
         await asyncio.gather(*tasks)
 
         return assistant_output, code_data, new_history
 
-    async def ask_follow_up(self, message: str, code_id: str):
+    async def ask_follow_up(self, message: str, code_id: str, container: Container, llm_engine: LLMEngine, use_self_debug=True):
         code_data = None
-        for code_file in await AgentSession.get_code_files(self.agent_session_id):
+        for code_file in await self.agent_session.get_code_files():
             if code_file['id'] == code_id:
                 code_data = code_file
                 break
         if code_data is None:
             print("Error: code file not found with id", code_id)
 
-        history = await AgentSession.get_history(self.agent_session_id)
-
         if code_data is not None and code_data['user_content'] != code_data['content']:
             message = 'BEGIN_CONTEXT: \nHere is the latest program the user is working on:\n ```python' + code_data['user_content'] + '```\nEND_CONTEXT\n\n' + message
 
-        await self.generate(message, history)
+        history = await self.agent_session.get_history()
+        _, code_data, new_history = await self.generate(llm_engine, message, history)
+        history = [*history, *new_history]
 
-    async def solve_task(self, container: Container, use_self_debug=True):
+        if code_data is not None and use_self_debug:
+            for t in range(3):
+                print("Running self-debug iteration", t)
+                halt, code_data, new_history = await self.step(code_data, container, llm_engine, history)
+                if new_history:
+                    history = [*history, *new_history]
+                if halt:
+                    break
+
+    async def solve_task(self, container: Container, llm_engine: LLMEngine, use_self_debug=True):
         await self.sync_uploads_dir(container)
         uploads_folder_tree = await generate_folder_tree(container.get_uploads_dir())
         dataset_preview = await generate_data_preview(container.get_uploads_dir())
 
         # clear any previous history and outputs
-        await AgentSession.clear(self.agent_session_id)
+        await self.agent_session.clear()
 
-        session = await AgentSession.get(self.agent_session_id)
+        session = await self.agent_session.get()
 
         sys_msg = self.get_sys_msg(
+            llm_engine,
             uploads_folder_tree,
             dataset_preview,
             session["task_instruction"],
@@ -403,13 +410,14 @@ class ScienceAgent():
         )
 
         history = session['history']
-        _, code_data, new_history = await self.generate(sys_msg, history, prompt_tag="system")
+        _, code_data, new_history = await self.generate(
+            llm_engine, sys_msg, history, prompt_tag="system")
         history = [*history, *new_history]
 
         if use_self_debug:
             for t in range(3):
                 print("Running self-debug iteration", t)
-                halt, code_data, new_history = await self.step(code_data, container, history)
+                halt, code_data, new_history = await self.step(code_data, container, llm_engine, history)
                 if new_history:
                     history = [*history, *new_history]
                 if halt:

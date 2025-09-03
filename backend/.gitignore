@@ -173,10 +173,12 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+.DS_Store
 program_to_eval
 tmp
 requirements.in
 eval_requirements.txt
 agent_sessions
 benchmark
-.DS_Store
+file_storage
+benchmark.zip

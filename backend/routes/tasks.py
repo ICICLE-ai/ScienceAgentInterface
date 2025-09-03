@@ -33,7 +33,7 @@ async def user_tasks():
 @tasks_blueprint.route("/<string:id>", methods=["GET"])
 async def get_task(id):
     try:
-        data = await AgentSession.get(id)
+        data = await AgentSession(id).get()
     except:
         return {"error": "Failed to load dataset"}, 404
     return data
@@ -41,6 +41,7 @@ async def get_task(id):
 
 @tasks_blueprint.route("/<string:id>/agent_session", methods=["POST"])
 async def create_session_from_task(id):
-    prefill = await AgentSession.get(id)
+    prefill = await AgentSession(id).get()
+    prefill['metadata']['source'] = 'user'
     agent_session_id = await AgentSession.create(prefill)
     return { "agent_session_id": agent_session_id }

@@ -3,43 +3,68 @@ from agent_session import AgentSession
 from agent import ScienceAgent
 from broker import broker
 from container import Container
+from storage import Storage
+from llm_engine import LLMEngine
 import json
 import asyncio
 import traceback
 import config
+import os
 
 execution_blueprint = Blueprint('execution', __name__)
 
 class AgentWebSocketConnection:
-    def __init__(self, agent_session_id):
-        self.agent_session_id = agent_session_id
-        self.container = Container(agent_session_id)
-        self.agent = ScienceAgent(agent_session_id, config.LLM_ENGINE_NAME)
+    def __init__(self, agent_session: AgentSession):
+        self.agent_session = agent_session
+        self.container = Container(self.agent_session)
+        self.agent = ScienceAgent(self.agent_session)
         self.cancellable_task = None
         self.running_commands = []
 
     async def init(self):
         await self.container.make_dirs()
 
-    async def execute_command(self, command, data):
+    def get_llm_engine(self, data: dict):
+        if data.get("llm_engine_name") and data.get("llm_api_key"):
+            llm_engine = LLMEngine(data.get("llm_engine_name"), api_key=data.get("llm_api_key"), base_url=data.get("llm_base_url"))
+        else:
+            llm_engine = LLMEngine(config.LLM_ENGINE_NAME, api_key=os.getenv('LLM_API_KEY'), base_url=config.LLM_BASE_URL)
+        return llm_engine
+
+    async def execute_command(self, command: str, data: dict):
         if command == 'solve_task':
-            await asyncio.create_task(self.agent.solve_task(self.container, data.get("use_self_debug", True)))
+            await self.agent.solve_task(
+                self.container,
+                self.get_llm_engine(data),
+                data.get("use_self_debug", True),
+            )
         elif command == 'follow_up':
-            await asyncio.create_task(self.agent.ask_follow_up(data.get("message"), data.get("code_id")))
+            await self.agent.ask_follow_up(
+                data.get("message"),
+                data.get("code_id"),
+                self.container,
+                self.get_llm_engine(data),
+                data.get("use_self_debug", True),
+            )
         elif command == 'run_program':
-            await asyncio.create_task(self.agent.execute(data.get("id"), self.container))
+            await self.agent.execute(
+                data.get("id"),
+                self.container,
+            )
         elif command == 'update_program':
             id = data.get("id")
-            return await AgentSession.update_code_file(self.agent_session_id, id, data.get("user_content"))
+            await self.agent_session.update_code_file(
+                id,
+                data.get("user_content"),
+            )
         elif command == 'update_task_inputs':
-            await AgentSession.update_inputs(
-                self.agent_session_id,
+            await self.agent_session.update_inputs(
                 data["task_instruction"],
                 data["domain_knowledge"],
                 data["description"],
             )
         elif command == 'clear':
-            await AgentSession.clear(self.agent_session_id)
+            await self.agent_session.clear()
         elif command == 'cancel':
             if self.cancellable_task:
                 self.cancellable_task.set_name("cancelled")
@@ -47,7 +72,7 @@ class AgentWebSocketConnection:
         else:
             return {"type": "error", "message": "Unknown command"}
 
-    def handle_message(self, data):
+    def handle_message(self, data: dict):
         command = data['command']
         command_id = data['command_id']
 
@@ -57,18 +82,18 @@ class AgentWebSocketConnection:
                 if not result:
                     result = {}
                 result["command_id"] = command_id
-                await broker.publish(self.agent_session_id, result)
+                await broker.publish(self.agent_session.id, result)
             except asyncio.CancelledError:
                 print("Command cancelled:", command, command_id)
                 if self.cancellable_task and self.cancellable_task.get_name() == "cancelled":
-                    await broker.publish(self.agent_session_id, { "type": "error", "message": "Command cancelled", "command_id": command_id })
+                    await broker.publish(self.agent_session.id, { "type": "error", "message": "Command cancelled", "command_id": command_id })
                     self.cancellable_task = None
                 else:
                     raise
             except Exception as e:
                 print("Error while executing command:", command)
                 traceback.print_exc()
-                await broker.publish(self.agent_session_id, {"type": "error", "message": "Internal server error", "command_id": command_id})
+                await broker.publish(self.agent_session.id, {"type": "error", "message": "Internal server error", "command_id": command_id})
 
         new_task = asyncio.create_task(_run())
 
@@ -87,9 +112,10 @@ class AgentWebSocketConnection:
 
 
 @execution_blueprint.websocket("/ws/<string:agent_session_id>")
-async def ws(agent_session_id):
+async def ws(agent_session_id: str):
     try:
-        initial_state = await AgentSession.get(agent_session_id)
+        agent_session = AgentSession(agent_session_id)
+        initial_state = await agent_session.get()
         if not initial_state:
             return {"error": "Invalid Agent Session ID"}, 403
         if initial_state.get('metadata', {}).get('source') != 'user':
@@ -99,9 +125,14 @@ async def ws(agent_session_id):
         return {"error": "Internal server error"}, 403
 
     # Send the initial session state to the client
-    await websocket.send(json.dumps({"type": "state", "state": initial_state}))
+    response = {
+        "type": "state",
+        "state": initial_state,
+        "has_default_llm": bool(config.LLM_ENGINE_NAME),
+    }
+    await websocket.send(json.dumps(response))
 
-    connection = AgentWebSocketConnection(agent_session_id)
+    connection = AgentWebSocketConnection(agent_session)
     await connection.init()
 
     async def _receive():
@@ -142,7 +173,7 @@ async def create_session():
 async def validate_session():
     data = await request.json
     agent_session_id = data.get("agent_session_id")
-    initial_state = await AgentSession.get(agent_session_id)
+    initial_state = await AgentSession(agent_session_id).get()
     if not initial_state:
         return {"error": "Invalid Agent Session ID"}, 404
     if initial_state.get('metadata', {}).get('source') != 'user':
@@ -151,7 +182,7 @@ async def validate_session():
 
 
 @execution_blueprint.route("/upload/<string:agent_session_id>", methods=["POST"])
-async def upload_file(agent_session_id):
+async def upload_file(agent_session_id: str):
     if not agent_session_id:
         return {"error": "No Agent Session ID provided."}, 400
     files = await request.files
@@ -161,16 +192,24 @@ async def upload_file(agent_session_id):
     if file.name == '' or not file:
         return {"error": "No selected file"}, 400
 
-    file_info = await AgentSession.upload_file(agent_session_id, file, request.content_length)
+    object_name = f"{agent_session_id}/{file.filename}"
+    await Storage.upload_file_stream(file, object_name)
+    file_size = request.content_length or 0
+    file_info = {'name': file.filename, 'size': file_size, 'object_name': object_name, 'source': 'user'}
+    await AgentSession(agent_session_id).add_uploaded_file(file_info)
 
     return file_info
 
 
 @execution_blueprint.route("/upload/<string:agent_session_id>/<string:filename>", methods=["DELETE"])
-async def remove_file(agent_session_id, filename):
+async def remove_file(agent_session_id: str, filename: str):
     if not agent_session_id:
         return {"error": "No Agent Session ID provided."}, 400
 
-    await AgentSession.remove_uploaded_file(agent_session_id, filename)
+    file = await AgentSession(agent_session_id).remove_uploaded_file(filename)
+
+    # Only delete user-uploaded files, not preloaded dataset files
+    if file and file.get('source') == 'user':
+        await Storage.remove_file(file.get('object_name'))
 
     return {"message": "File deleted."}

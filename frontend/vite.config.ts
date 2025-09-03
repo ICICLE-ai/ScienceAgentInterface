@@ -11,8 +11,8 @@ export default defineConfig({
     react(),
     serveStatic([
       {
-        pattern: /^\/artifact\/(.*)/,
-        resolve: (groups) => path.join("../backend/agent_sessions/", decodeURI(groups[1])),
+        pattern: /^\/storage\/(.*)/,
+        resolve: (groups) => path.join("../backend/file_storage/", decodeURI(groups[1])),
       },
     ]),
   ],

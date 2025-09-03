@@ -1,5 +1,6 @@
 FROM ubuntu:24.04
-
+ARG USER_UID=1000
+ARG USER_GID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 ENV PIP_ROOT_USER_ACTION=ignore
@@ -18,12 +19,12 @@ libxrender1 \
 && rm -rf /var/lib/apt/lists/*
 
 RUN userdel -r ubuntu && \
-    groupadd --gid 1000 sci-agent && \
-    useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash sci-agent && \
+    groupadd --gid ${USER_GID} sci-agent && \
+    useradd --uid ${USER_UID} --gid ${USER_GID} --create-home --shell /bin/bash sci-agent && \
     python -m venv /venv && \
-    chown -R 1000:1000 /venv
+    chown -R ${USER_UID}:${USER_GID} /venv
 
-COPY --chown=1000:1000 ./preinstalled_requirements.txt /tmp/requirements.txt
+COPY --chown=${USER_UID}:${USER_GID} ./preinstalled_requirements.txt /tmp/requirements.txt
 
 USER sci-agent
 ENV PATH="/venv/bin:$PATH"

@@ -5,11 +5,11 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChevronDown, Download, Files, FileCode, ImageIcon } from "lucide-react"
-import { useTheme } from "@/components/theme-provider"
+import { useTheme } from "@/providers/ThemeProvider"
 import { formatFileSize } from "@/lib/utils"
 import type { OutputFile } from "../../api/api"
 import { outputFileUrl } from "../../api/api"
-import CsvViewer from "./csv-viewer"
+import { CsvViewer } from "@/components/CsvViewer"
 import ContentModal from "./content-modal"
 
 interface FileCardProps {

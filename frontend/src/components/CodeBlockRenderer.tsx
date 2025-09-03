@@ -5,7 +5,7 @@ import { FileCode, Copy, ChevronDown, ChevronUp } from "lucide-react"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { dracula as darkCodeTheme, prism as lightCodeTheme } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { toast } from "sonner"
-import { useTheme } from "@/components/theme-provider"
+import { useTheme } from "@/providers/ThemeProvider"
 import type { CodeFile } from "../api/api"
 
 

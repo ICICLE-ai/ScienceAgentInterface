@@ -1,6 +1,6 @@
 import React from "react"
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { useTheme } from "@/components/theme-provider"
+import { useTheme } from "@/providers/ThemeProvider"
 
 // A simple CSV viewer that fetches and displays CSV content in a table with proper styling.
 export const CsvViewer: React.FC<{ url: string; onClick?: () => void }> = ({ url, onClick }) => {

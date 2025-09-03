@@ -1,21 +1,21 @@
 import React from "react"
 import { useMemo } from "react"
-import { OutputFile } from "../api/api"
+import { OutputFile } from "../../api/api"
 import { Map, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { FileCard } from "./FileCard"
+import { FileCard } from "../FileCard"
 
 
-interface InteractiveResultsPanelProps {
+interface ResultsPanelProps {
   outputFiles: OutputFile[]
   isProgramRunnable: boolean
   isBusy: boolean
   onRunProgram?: () => void
 }
 
-export const InteractiveResultsPanel: React.FC<InteractiveResultsPanelProps> = ({ outputFiles, isProgramRunnable, isBusy, onRunProgram }) => {
+export const ResultsPanel: React.FC<ResultsPanelProps> = ({ outputFiles, isProgramRunnable, isBusy, onRunProgram }) => {
   // Get file type from filename
   const getFileType = (filename: string): string => {
     const extension = filename.split(".").pop()?.toLowerCase() || ""
