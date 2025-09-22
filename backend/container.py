@@ -46,14 +46,6 @@ class Container:
         os.makedirs(self.get_uploads_dir(), exist_ok=True)
         os.makedirs(PIP_CACHE_DIR, exist_ok=True)
 
-        #if sys.platform == "linux":
-        #    # Set sci-agent ownership so the container can access mounted directories
-        #    uid = 1000
-        #    gid = 1000
-        #    os.chown(self.get_eval_dir(), uid, gid)
-        #    os.chown(self.get_uploads_dir(), uid, gid)
-        #    os.chown(PIP_CACHE_DIR, uid, gid)
-
     async def start(self):
         if self.is_running:
             return
@@ -66,6 +58,9 @@ class Container:
             return
 
         print("Creating container for", self.agent_session.id)
+
+        uid = os.getuid() if sys.platform == "linux" else 1000
+        gid = os.getgid() if sys.platform == "linux" else 1000
 
         config = {
             "Image": "science-agent",
@@ -88,14 +83,15 @@ class Container:
         self.is_running = True
 
     async def destroy(self):
-        if self.container is None:
-            return
+        if self.container is not None:
+            print("Stopping container:", self.container.id)
+            await self.container.stop()
+            await self.container.delete()
 
-        await self.container.stop()
-        await self.container.delete()
-        print("Stopped container:", self.container.id)
-
-        #await rmtree(self.get_session_dir(), ignore_errors=True)
+        print("Removing temp session data for", self.agent_session.id)
+        await rmtree(self.get_uploads_dir(), ignore_errors=True)
+        await rmtree(self.get_eval_dir(), ignore_errors=True)
+        await rmtree(self.get_output_cache_dir(), ignore_errors=True)
 
     async def stop(self):
         if self.container is None:
@@ -154,4 +150,4 @@ class Container:
             raise TimeoutError()
 
         return output, exit_code
-    
+
